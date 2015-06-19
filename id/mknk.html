@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<title>MKNetworkKit</title>
+
+<xmp theme="united" style="display:none;">
+
+# Apakah MKNetworkKit Itu?
+
+**MKNetworkKit** adalah framework networking siap pakai yang ditulis dalam Objective-C. Terinspirasi dari ASIHTTPRequest dan AFNetworking, framework ini menggunakan block dan ARC. Banyak fitur yang terdapat pada MKNetworkKit setelah 'menikahkan' kedua framework populer itu. Sebagai tambahan, MKNetworkKit mengharuskanmu untuk menulis agak lebih banyak code daripada framework lain. Dengan MKNetworkKit, mudah untuk menulis kode yang baik.
+
+# Fitur-Fitur
+
+### Sangat Ringan
+
+Kit komplitnya hanya terdiri dari 2 kelas dan beberapa kategori saja. Ini artinya menggunakan MKNetworkKit itu harusnya mudah sekali.
+
+### Satu Queue untuk Satu App-mu
+
+Apps yang sangat bergantung pada konektivitas harus mengoptimalkan jumlah operasi jaringan yang bersamaan. Sayangnya, tidak ada framework networking yang melakukan ini dengan benar. Mari saya beri contoh dari sesuatu yang bisa salah jika kamu tidak mengoptimalkan / mengontrol jumlah operasi jaringan bersamaan di app.
+
+Mari kita asumsikan kamu mengunggah foto-foto ke servermu. Kebanyakan jaringan mobile (3G) tidak mengizinkan lebih dari 2 koneksi HTTP bersamaan dari sebuah alamat IP. Dengan kata lain, dari device-mu, kamu tidak bisa membuka lebih dari 2 koneksi. Edge bahkan lebih buruk. Kamu biasanya tidak dapat membuka lebih dari 1 koneksi. Pada WiFi, sangat mungkin untuk membuka hingga 6 koneksi secara bersamaan. Karena iDevice-mu tidak selalu terkoneksi ke Wifi, siap-siaplah untuk mendapatkan konektifitasmu terestriksi. Untuk kasus normal, iDevice biasanya terkoneksi melalui network 3G, yang berarti, kamu terestriksi untuk mengunggah hanya 2 foto secara parallel. Sekarang, bukan lagi lambatnya mengunggah yang menyebalkan. Masalah sebenarnya muncul ketika kamu membuka foto-foto lain di tempat lain ketika operasi pengunggahan ini berjalan di background. Ketika kamu tidak mengontrol ukuran queue secara benar di dalam app, operasi pengunduhan foto hanya akan timeout saja... ini bukan cara yang benar. Cara yang benar adalah untuk memprioritaskan operasi pengunduhan atau tunggu hingga penggunggahan selesai dan taruh fotonya. Oleh karena itu, kamu harus punya 1 queue di dalam 1 app. MKNetworkKit langsung secara otomatis menggunakan satu queue saja untuk setiap instance-nya. Walaupun MKNetworkKit bukan singleton, queuenya tetap singleton.
+
+### Menunjukkan Indikator Aktifitas Network dengan Benar
+
+Walaupun ada banyak kelas third party lain yang menaikkan atau menurunkan total panggilan jaringan dan menggunakannya untuk menunjukkan indikator aktifitas jaringan, MKNetworkKit kembali pada prinsip queue tunggal dan menunjukkan indikator aktifitas secara otomatis ketika ada operasi berjalan pada queue tersebut dengan meng-observe (KVO) `operationCount`. Sebagai seorang developer, kamu biasanya tidak perlu khawatir untuk mengeset indikator aktifitas network secara manual lagi.
+
+```
+if (object == _sharedNetworkQueue && [keyPath isEqualToString:@"operationCount"]) {
+    [UIApplication sharedApplication].networkActivityIndicatorVisible =
+    ([_sharedNetworkQueue.operations count] > 0);
+}
+```
+
+### Auto queue sizing
+
+Melanjutkan dari diskusi sebelumnya, saya katakan bahwa kebanyakan jaringan mobile tidak mengizinkan lebih dari 2 koneksi bersamaan. Jadi ukuran queue harus diset menjadi 2 ketika jaringan terkoneksi dengan 3G. MKNetworkKit menangani ini secara otomatis untukmu. Ketika network berubah menjadi 3G/EDGE/GPRS, total operasi yang dijalankan bersamaan berubah menjadi 2. Jumlah ini secara otomatis berubah kembali menjadi 6 ketika device terkoneksi kembali ke jaringan wifi. Dengan teknik ini, kamu akan melihat performa yang sangat baik ketika memuat banyak thumbnail (atau banyak request yang mirip) untuk library foto dari server remote melalui 3G.
+
+### Auto caching
+
+MKNetworkKit dapat secara otomatis meng-cache semua request GET kamu. Ketika kamu membuat request yang sama lagi, MKNetworkKit memanggil completion handler dengan versi response yang sudah di-cache (jika ada) secepatnya. Pemanggilan ke server juga akan dilakukan lagi. Setelah data server didapat, completion handler dipanggil lagi dengan data response yang baru. Ini artinya kamu tidak perlu meng-handle caching secara manual lagi. Yang kamu butuhkan ada di satu method.
+
+```
+[[MKNetworkEngine sharedEngine] useCache];
+```
+
+Jika perlu, kamu juga dapat meng-override method di subclass MKNetworkEngine untuk menyesuaikan harga directory dan cache in-memory.
+
+### Pembekuan Operasi (Operation Freezing)
+
+Dengan MKNetworkKit, kamu bisa membekukan operasi jaringan. Ketika kamu membekukan sebuah operasi jaringan, jika koneksi jaringan hilang, operasi-operasi tersebut akan di-serialize secara otomatis dan dijalankan ketika device kembali online. Ini mirip seperti “draft” pada client twitter-mu.
+
+Ketika kamu mempos sebuat tweet, tandai pemanggilan jaringan untuk bisa di-freeze dan MKNetworkKit secara otomatis mengurus pembekuannya dan me-restore requestnya untukmu! Jadi tweet dikirim nanti tanpa kamu perlu banyak menulis kode. Kamu bisa menggunakan fitur itu untuk operasi lain seperti memfavoritkan sebuah tweet atau berbagi pos dari client Google Reader-mu, menambahkan link ke Instapaper dan operasi lainnya yang mirip.
+
+### Menjalankan satu operasi untuk request yang mirip
+
+Ketika kamu me-load thumbnail (untuk sebuah stream twitter), kamu mungkin membuat request baru untuk setiap gambar. Tapi kenyataannya, kamu hanya perlu request sebanyak URL yang unik. Dengan MKNetworkKit, setiap request GET yang di-queue dijalankan sekali saja. MKNetworkKit cukup pintar untuk tidak meng-cache request HTTP “POST”.
+
+### Cache Gambar
+
+MKNetworkKit dapat dengan mudah digunakan untuk meng-cache thumbnail. Dengan meng-override beberapa method, kamu dapat menyesuaikan berapa gambar yang harus disimpan pada cache in-memory dan di mana direktori cache tempat penyimpanannya. Override method tersebut opsional.
+
+### Performa
+
+MKNetworkKit sangat cepat. MKNetworkKit bekerja seperti NSCache, tetapi jika ada memory warning, cache in-memory ditulis ke direktori cache.
+
+### Dukungan Penuh untuk ARC Objective-C
+
+Kamu biasanya memilih sebuah framework jaringan untuk proyek baru. MKNetworkKit tidak untuk menggantikan framework yang ada (walaupun bisa, itu cukup melelahkan). Untuk proyek baru, kamu akan dan selalu ingin menggunakan ARC. MKNetworkKit adalah 100% siap dengan ARC. Manajemen memory berbasis ARC biasanya jauh lebih cepat daripada yang tidak berbasis ARC.
+
+# Cara Pakai
+
+Mari kita lihat cata menggunakan frameworknya.
+
+### Menambahkan MKNetworkKit
+
+1. Tarik direktori MKNetworkKit ke proyekmu
+1. Tambahkan CFNetwork.Framework, SystemConfiguration.framework, Security.framework dan ImageIO.framework.
+1. Tambahkan MKNetworkKit.h ke file PCH-mu
+1. Hapus file NSAlert+MKNetworkKitAdditions.h jika kamu membuat proyek untuk iOS.
+1. Hapus file UIAlertView+MKNetworkKitAdditions.h jika kamu membuat proyek untuk Mac.
+
+Selesai. Cukup 5 file saja.
+
+### Kelas pada MKNetworkKit
+
+1. MKNetworkOperation
+1. MKNetworkEngine
+1. Kelas helper lainnya (Reachability Apple) dan kategori
+
+Saya percaya pada kesederhanaan. Apple telah mengambil bagian besar dalam menulis kode jaringan yang sebenarnya. Yang harus disediakan framework jaringan third party adalah jaringan berbasis queue elegan dengan cache opsional. Saya percaya bahwa frameword third party apapun seharusnya hanya memiliki kurang dari 10 kelas. Lebih dari itu, berarti framework tersebut berlebihan. Three 20 dan ShareKit adalah contoh library yang berlebihan. Mungkin itu bagus, tetapi terlalu besar. ASIHttpRequest atau AFNetworking ringan, tidak seperti RestKit. JSONKit ringan, tidak seperti TouchJSON. Mungkin ini saya saja, tetapi saya tidak tahan ketika 1/3 kode saya datang dari third party.
+
+Masalah dari framework besar adalah kesulitan untuk mengerti cara kerja dalamnya dan kemampuan menyesuaikan dengan keperluanmu jika kamu perlu. Framework saya (MKStroreKit untuk menambahkan pembelian dalam app) selalu sangat mudah untuk digunakan dan saya percara MKNetworkKit juga sama. Untuk menggunakan MKNetworkKit, yang hanya perlu method yang diekspos dari 2 kelas (MKNetworkOperation dan MKNetworkEngine). MKNetworkOperation mirip dengan kelas ASIHttpRequest. MKNetworkOperation adalah subclass dari NSOperation dan itu membungkus kelas request dan response. Kamu membuat sebuah MKNetworkOperation untuk setiap operasi jaringan untuk aplikasimu.
+
+MKNetworkEngine adalah kelas agak singleton yang mengatur queue jaringan pada aplikasimu. Itu agak singleton, dalam arti untuk request sederhana, kamu sebaiknya menggunakan method MKNetworkEngine langsung. Untuk penyesuaian yang lebih kompleks, sebaiknya kamu subclass. Setiap subclass MKNetworkEngine memiliki objek Reachability sendiri yang memberi notifikasi bahwa servernya dapat dicapai. Kamu sebaiknya membuat subclass dari MKNetworkEngine untuk setiap server REST yang kamu pakai. Itu agak singleton dalam arti setiap request dalam setiap subclassnya melalui hanya satu queue.
+
+Kamu dapat me-retain instance dari MKNetworkEngine dalam delegate aplikasi seperti kelas managedObjectContext pada CoreData. Ketika kamu menggunakan MKNetworkKit, kamu membuat subclass MKNetworkEngine untuk menggrup panggilan jaringanmu. Contohnya, semua method yang berhubungan dengan Yahoo ada pada satu kelas dan semua yang method yang berhubungan dengan Facebook ditaruh pada kelas lain. Kita akan sekarang melihat 3 contoh berbeda dari cara menggunakan framework ini.
+
+# Contoh 1
+
+Mari kita membuat sebuat "Yahoo Engine" yang menarik nilai tukar mata uang dari Yahoo finance.
+
+
+**Langkah 1**: Buat sebuah kelas YahooEngine sebagai subclass MKNetworkEngine. Method MKNetworkEngine init mengambil hostname dan custom header (jika ada). Custom header tidak wajib diberikan dan bisa nil. Jika kamu menulis server REST sendiri (tidak seperti kasus ini), kamu mungkin ingin menambahkan versi app client sendiri dan data lainnya seperti identifier client.
+
+```
+NSMutableDictionary *headerFields = [NSMutableDictionary dictionary];
+    [headerFields setValue:@"iOS" forKey:@"x-client-identifier"];
+
+self.engine = [[YahooEngine alloc] initWithHostName:@"download.finance.yahoo.com"
+                   customHeaderFields:headerFields];
+```
+
+Catat bahwa, walaupun Yahoo tidak mengharuskanmu untuk mengirim x-client-identifier pada header, contoh code di atas mengirimnya hanya untuk mendemonstrasikan fiturnya.
+
+Karena code komplitnya dalam ARC, terserah kamu sebagai developer untuk menambahkan (referensi kuat) instance Engine-nya.
+
+Ketika kamu membuat subclass MKNetworkEngine, implementasi Reachability sudah dilakukan secara otomatis untukmu. Itu ketika server mati atau karena hal tertentu, hostname tidak tercapai, requestmu akan secara otomatis di-queue/dibekukan. Untuk informasi lebih lanjut mengenai pembekuan operasi, bacalah bagian Pembekuan Operasi nanti di halaman ini.
+
+**Langkah 2**: Mendesain Class Engine (Pemisahan Concern)
+
+Mari kita sekarang menulis method di Engine Yahoo untuk mengambil nilai tukar mata uang. Method engine akan dipanggil dari view controller-mu. Praktik desain yang baik adalah dengan memastikan class engine-mu tidak membuka URL/HTTPHeaders ke kelas yang memanggil. View-mu sebaiknya tidak tahu tentang URL atau parameter yang dibutuhkan. Ini berarti, parameter untuk method dalam Engine Yahoo-mu seharusnya mata uang dan total unit mata uang. Nilai return dari method ini bisa berupa nilai double dari faktor nilai tukar dan mungkin bisa timestamp dari waktu pemanggilan itu. Karena operasinya tidak dijalankan secara serentak, sebaiknya kamu return nilai-nilai ini dalam bentuk block. Contohnya:
+
+```
+-(MKNetworkOperation*) currencyRateFor:(NSString*) sourceCurrency
+                        inCurrency:(NSString*) targetCurrency
+        onCompletion:(CurrencyResponseBlock) completion
+                         onError:(ErrorBlock) error;
+```
+
+MKNetworkEngine, class parent-nya, mendefinisikan 3 tipe method block sebagai berikut.
+
+```
+typedef void (^ProgressBlock)(double progress);
+typedef void (^ResponseBlock)(MKNetworkOperation* operation);
+typedef void (^ErrorBlock)(NSError* error);
+```
+
+Pada YahooEngine kita, kita akan menggunakan jenis block baru, CurrencyResponseBlock yang me-return nilai tukarnya. Definisinya terlihat seperti di bawah.
+
+```
+typedef void (^CurrencyResponseBlock)(double rate);
+```
+
+Pada aplikasi normal, kamu harus mendefinisikan method block kamu sendiri mirip dengan CurrencyResponseBlock untuk mengirim data kembali pada view controllers.
+
+**Langkah 3**: Memproses data
+
+Pemrosesan data, yaitu mengkonversi data yang kamu ambil dari server, baik itu JSON, XML, atau plist binary, sebaiknya dilakukan pada Engine-mu. Bebaskan controllermu dari melakukan tugas ini. Engine-mu sebaiknya mengirim balik data dalam objek model atau array dari objek model (kalau berupa list). Konversikan JSON/XML ke model di engine-nya. Pastikan pemisahan concern yang baik; view controller-mu sebaiknya tidak tahu tentang keys untuk mengakses elemen individual dari JSON-mu.
+
+Itu kesimpulan dari desain Engine-mu. Kebanyakan framework networking tidak mengharuskanmu untuk mengikuti pemisahan concern seperti itu. Kami melakukannya, karena kami peduli kepadamu :)
+
+**Langkah 4**: Implementasi method
+
+Mari kita diskusikan detil implementasi dari method yang menghitung nilai tukar-mu.
+
+Mendapatkan informasi nilai tukar dari Yahoo semudah membuat request GET. Saya membuat macro untuk memformat URL, diberikan pasangan mata uang.
+
+```
+#define YAHOO_URL(__C1__, __C2__) [NSString stringWithFormat:@"d/quotes.csv?e=.csv&f=sl1d1t1&s=%@%@=X", __C1__, __C2__]
+```
+
+Method yang kamu tulid di dalam class engine-mu sebaiknya melakukan hal-hal berikut secara berurutan.
+
+1. Siapkan URL dari parameternya.
+1. Buat objek MKNetworkOperation dari request-name.
+1. Sesuaikan parameter method-mu.
+Tambahkan handler completion dan error ke operation (Completion handler adalah tempat untuk memproses response-mu dan mengkonversinya ke model).
+1. Opsional: Tambahkan handler kemajuan ada operasinya, atau lakukan ini pada view controller.
+1. Opsional: Jika operasimu adalah mengunduh file, sesuaikan stream download (biasanya file) di operasinya.
+1. Ketika operasi selesai, proses hasilnya dan jalankan method block-nya untuk me-return data ini ke method yang memanggil.
+
+Hal di atas diilustrasikan pada code berikut.
+
+```
+MKNetworkOperation *op = [self operationWithPath:YAHOO_URL(sourceCurrency, targetCurrency)
+                                                  params:nil
+                                             httpMethod:@"GET"];
+ 
+[op onCompletion:^(MKNetworkOperation *completedOperation)
+ {
+     DLog(@"%@", [completedOperation responseString]);
+
+   // do your processing here
+     completionBlock(5.0f);
+
+ }onError:^(NSError* error) {
+
+     errorBlock(error);
+ }];
+
+[self enqueueOperation:op];
+
+return op;
+```
+
+Kode di atas memformat URL dan membuat MKNetworkOperation. Setelah handler completion dan error diset, operation di-queue dengan memanggil method `enqueueOperation` milik superclass dan me-return referensi darinya. View controller-mu seharusnya memiliki operasi ini dan membatalkannya ketika view keluar dari hierarki view controllernya. Jadi jika kamu memanggil method engine di, katakanlah `viewDidAppear`, batalkan operasi di `viewWillDisappear`. Membatalkan operasinya akan membebaskan queue untuk melakukan operasi lain di view lainnya. Ingat, hanya 2 operasi yang dapat dijalankan secara parallel di jaringan mobile. Membatalkan operasimu ketika itu tidak lagi dibutuhkan sangat membantu performa dan kecepatan app-mu.
+
+View controller-mu juga bisa, tapi tidak harus, menambahkan handler progress dan meng-update user interface-nya, seperti yang diilustrasikan berikut.
+
+```
+[self.uploadOperation onUploadProgressChanged:^(double progress) {
+ 
+    DLog(@"%.2f", progress*100.0);
+    self.uploadProgessBar.progress = progress;
+}];
+```
+
+MKNetworkEngine juga memiliki method mudah untuk membuat operasi hanya dengan URL. Jadi baris pertama dari code bisa juga ditulis sebagai berikut.
+
+```
+MKNetworkOperation *op = [self operationWithPath:YAHOO_URL(sourceCurrency, targetCurrency)];
+```
+
+Catat bahwa URL request secara otomatis diprefix dengan hostname yang kamu sediakan ketika menginisialisasi class engine-mu.
+
+Membuat method POST, DELETE atau PUT semudah mengganti parameter `httpMethod`. MKNetworkEngine memiliki banyak method mudah seperti ini. Bacalah header file-nya untuk mengetahui lebih lanjut.
+
+# Contoh 2
+
+Mengunggah gambar ke server (contohnya seperti TwitPic).
+
+Sekarang mari kita lihat contoh cara mengunggah gambar ke sebuah server. Mengunggah gambar tentunya mengharuskan operasinya untuk di-encode sebagai data form multi-part. MKNetworkKit mengikuti pola mirip seperti ASIHTTPRequest; panggil method `addFile:forKey:` pada MKNetworkOperation untuk meng-attach sebuah file sebagai data form multi-part pada request-mu.
+
+Semudah itu.
+
+MKNetworkOperation juga memiliki method mudah untuk menambahkan gambar dari pointer NSData. Itu ketika kamu memanggil method addData:forKey: untuk mengunggah image ke server secara langsung dari pointer NSData. Pikirkan mengunggah gambar dari kamera langsung.
+
+
+# Contoh 3
+
+Mendownload file ke direktori lokal (Caching)
+
+Mendownload file dari server remote dan menyimpannya ke lokasi pada iPhone pengguna sangatlah mudah dengan MKNetworkKit. Cukup sesuaikan `outputStream` dari MKNetworkOperation.
+
+```
+[operation setDownloadStream:[NSOutputStream
+  outputStreamToFileAtPath:@"/Users/mugunth/Desktop/DownloadedFile.pdf"
+        append:YES]];
+```
+
+Kamu dapat menyesuaikan banyak stream output dari sebuah operasi untuk menyimpan file yang sama ke banyak lokasi (contohnya seperti satu ke direktori cache-mu dan satu ke direktori lainnya).
+
+# Contoh 4
+
+Cache Gambar Thumbnail
+
+Untuk mengunduh gambar, kamu mungkin perlu untuk menyediakan URL absolut, bukan sebuah path. MKNetworkEngine memiliki method mudah untuk ini. Panggil `operationWithURLString:params:httpMethod:` untuk membuat operasi jaringan dengan menggunakan URL absolut.
+
+MKNetworkEngine menyatukan banyak request GET yang ber-URL sama dan menotifikasikan semua block ketika request itu selesai. Ini secara drastis mempercepat mengunduhan URL untuk mendapatkan thumbnail.
+
+Subclass MKNetworkEngine dan override direktori cache gambar dan harga cache. Jika kamu tidak mau menyesuaikannya, kamu dapat langsung memanggil method MKNetworkEngine langsung untuk mengunduh gambar untukmu. Saya sarankan merekomendasikan itu.
+
+# Operasi Cache
+
+MKNetworkKit men-cache semua request secara default. Yang kamu butuhkan adalah untuk menyalakan cache untuk Engine-mu. Ketika request GET dilakukan, jika response sudah di-cache, handler completion-mu dipanggil dengan response cache secepatnya. Untuk mengetahui bahwa response di-cache, gunakanlah method `isCachedResponse`. Berikut contohnya.
+
+
+```
+[op onCompletion:^(MKNetworkOperation *completedOperation)
+     {
+     if([completedOperation isCachedResponse]) {
+         DLog(@"Data from cache");
+     }
+     else {
+         DLog(@"Data from server");
+     }
+
+     DLog(@"%@", [completedOperation responseString]);
+ } onError:^(NSError* error) {
+
+     errorBlock(error);
+ }];
+```
+
+# Membekukan Operasi
+
+Ini adalah fitur MKNetworkKit yang paling menarik. Yang kamu butuhkan adalah membuat operasimu menjadi bisa dibekukan.
+
+```
+[op setFreezable:YES];
+```
+
+Operasi yang dapat dibekukan secara otomatis diserialisasikan ketika jaringan mati dan dijalankan ketika konektifitas kembali. Bayangkan seperti kamu bisa memfavoritkan tweet ketika kamu offline dan operasinya dijalankan ketika kamu online nanti.
+
+Operasi-operasi yang dibekukan juga disimpan ke disk ketika app masuk ke background. Mereka juga akan langsung secara otomatis dijalankan ketika app kembali berjalan.
+
+# Method Penting Lainnya di MKNetworkOperation
+
+MKNetworkOperation mengekspos method seperti berikut untuk mendapatkan data response.
+
+1. responseData
+1. responseString
+1. responseJSON (iOS 5 ke atas)
+1. responseImage
+1. responseXML
+1. error
+
+Method ini sangat membantu untuk mengakses response setelah operasi jaringan selesai. Ketika formatnya salah, methodnya me-return nil. Contohnya, mencoba mengakses `responseImage` ketika response yang sebenarnya adalah HTML akan me-return nil. Method yang dijamin akan selalu me-return response yang tepat adalah `responseData`. Gunakan method lain jika kamu yakin tipe response-nya.
+
+# Macro-Macro Lainnya
+
+Macro-macro, DLog dan ALog, diambil dari Stackoverflow dan saya tidak dapat lagi menemukan sourcenya. Jika kamu menulis itu, harap beritahu saya.
+
+# Catatan tentang GCD
+
+Saya sengaja tidak menggunakan GCD karena operasi network perlu dihentikan dan diprioritaskan terserah. GCD, walaupun lebih efisien dari NSOperationQueue, tidak dapat melakukan ini. Saya rekomendasikan untuk tidak menggunakan queue berbasis GCD untuk operasi jaringanmu.
+
+# Dokumentasi
+
+File-file header diberi komentar dan saya mencoba headerdoc dari Apple. Sementara itu, kamu dapat menggunakan atau memfork code-nya.
+
+# Source Code
+
+Source code untuk MKNetworkKit berikut aplikasi demo tersedia di GitHub.
+
+# Permintaan Fitur
+
+Harap jangan email saya untuk meminta fitur. Cara terbaik adalah dengan membuat issue di GitHub.
+
+# Licensing
+
+MKNetworkKit dilisensikan menggunakan MIT License
+
+Semua kode dapat digunakan secara gratis pada app kamu, jika kamu menambahkan hak cipta pada app kamu. Kamu bisa menyebutkannya pada halaman "about" kamu.
+
+Lisensi bebas atribusi tersedia berdasarkan permintaan. Kontak saya di mknetworkkit@mk.sg
+
+</xmp>
+
+<script src="http://strapdownjs.com/v/0.2/strapdown.js"></script>
+</html>
